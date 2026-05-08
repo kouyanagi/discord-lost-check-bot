@@ -1,5 +1,3 @@
-import "dotenv/load.ts";
-
 type DiscordCommandData = {
   name?: string;
 };
