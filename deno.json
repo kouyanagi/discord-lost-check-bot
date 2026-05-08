@@ -1,0 +1,9 @@
+{
+  "tasks": {
+    "register": "deno run --allow-net --allow-env --allow-read register.ts",
+    "start": "deno run --allow-net --allow-env --allow-read main.ts"
+  },
+  "imports": {
+    "tweetnacl": "npm:tweetnacl@1.0.3"
+  }
+}
