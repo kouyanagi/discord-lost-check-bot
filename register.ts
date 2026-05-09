@@ -1,4 +1,4 @@
-import "https://deno.land/std@0.224.0/dotenv/load.ts";
+import "dotenv/load.ts";
 
 const BOT_TOKEN = Deno.env.get("BOT_TOKEN");
 const APPLICATION_ID = Deno.env.get("APPLICATION_ID");
