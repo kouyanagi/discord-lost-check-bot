@@ -1,140 +1,63 @@
-type DiscordCommandData = {
-  name?: string;
-};
+import nacl from "npm:tweetnacl";
 
-type DiscordInteraction = {
-  type?: number;
-  data?: DiscordCommandData;
-  channel_id?: string;
-  application_id?: string;
-  token?: string;
-};
+const DISCORD_PUBLIC_KEY = Deno.env.get("DISCORD_PUBLIC_KEY") ?? "";
+const GAS_URL = Deno.env.get("GAS_URL") ?? "";
 
-type GasResponse = {
-  ok?: boolean;
-  message?: string;
-};
+const encoder = new TextEncoder();
 
-type EdgeRuntimeLike = {
-  waitUntil: (promise: Promise<void>) => void;
-};
-
-const GAS_WEB_APP_URL = Deno.env.get("GAS_WEB_APP_URL");
-
-if (!GAS_WEB_APP_URL) {
-  throw new Error("GAS_WEB_APP_URL がありません");
+function hexToUint8Array(hex: string): Uint8Array {
+  return new Uint8Array(
+    hex.match(/.{1,2}/g)?.map((byte) => parseInt(byte, 16)) ?? [],
+  );
 }
 
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
+async function verifyDiscordRequest(request: Request) {
+  const signature = request.headers.get("X-Signature-Ed25519");
+  const timestamp = request.headers.get("X-Signature-Timestamp");
+
+  if (!signature || !timestamp || !DISCORD_PUBLIC_KEY) {
+    return { ok: false, body: "" };
   }
 
-  return String(error);
+  const body = await request.text();
+
+  const isVerified = nacl.sign.detached.verify(
+    encoder.encode(timestamp + body),
+    hexToUint8Array(signature),
+    hexToUint8Array(DISCORD_PUBLIC_KEY),
+  );
+
+  return { ok: isVerified, body };
 }
 
-function getEdgeRuntime(): EdgeRuntimeLike | undefined {
-  const runtime = (globalThis as { EdgeRuntime?: EdgeRuntimeLike }).EdgeRuntime;
-  return runtime;
-}
+Deno.serve(async (request) => {
+  const { ok, body } = await verifyDiscordRequest(request);
 
-async function updateOriginalResponse(
-  applicationId: string,
-  interactionToken: string,
-  content: string,
-): Promise<void> {
-  const url =
-    `https://discord.com/api/v10/webhooks/${applicationId}/${interactionToken}/messages/@original`;
-
-  await fetch(url, {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      content,
-    }),
-  });
-}
-
-async function handleLostCheck(body: DiscordInteraction): Promise<void> {
-  const channelId = String(body.channel_id ?? "");
-  const applicationId = String(body.application_id ?? "");
-  const interactionToken = String(body.token ?? "");
-
-  try {
-    const gasUrl =
-      `${GAS_WEB_APP_URL}?mode=lostCheck&channelId=${encodeURIComponent(channelId)}`;
-
-    const gasRes = await fetch(gasUrl);
-    const text = await gasRes.text();
-
-    let gasData: GasResponse;
-
-    try {
-      gasData = JSON.parse(text) as GasResponse;
-    } catch {
-      await updateOriginalResponse(
-        applicationId,
-        interactionToken,
-        `GASからJSON以外の返答がありました。\n\n${text.slice(0, 1000)}`,
-      );
-      return;
-    }
-
-    await updateOriginalResponse(
-      applicationId,
-      interactionToken,
-      gasData.message || "落選者情報を取得できませんでした。",
-    );
-  } catch (error) {
-    await updateOriginalResponse(
-      applicationId,
-      interactionToken,
-      `エラーが発生しました：${getErrorMessage(error)}`,
-    );
-  }
-}
-
-Deno.serve(async (req: Request): Promise<Response> => {
-  if (req.method !== "POST") {
-    return new Response("OK");
+  if (!ok) {
+    return new Response("invalid request signature", { status: 401 });
   }
 
-  const body = await req.json() as DiscordInteraction;
+  const interaction = JSON.parse(body);
 
-  // DiscordのPING確認
-  if (body.type === 1) {
+  // Discordの接続確認
+  if (interaction.type === 1) {
     return Response.json({ type: 1 });
   }
 
-  const commandName = body.data?.name ?? "";
+  // /落選確認
+  const channelId = interaction.channel_id;
 
-  if (commandName === "落選確認") {
-    const task = handleLostCheck(body);
+  const gasResponse = await fetch(
+    `${GAS_URL}?mode=lostCheck&channelId=${channelId}`,
+  );
 
-    const edgeRuntime = getEdgeRuntime();
-
-    if (edgeRuntime) {
-      edgeRuntime.waitUntil(task);
-    } else {
-      task.catch((error) => {
-        console.error("handleLostCheck error:", getErrorMessage(error));
-      });
-    }
-
-    return Response.json({
-      type: 5,
-      data: {
-        content: "落選者情報を確認中です…",
-      },
-    });
-  }
+  const data = await gasResponse.json();
 
   return Response.json({
     type: 4,
     data: {
-      content: "未対応のコマンドです。",
+      content: data.message ?? "取得できませんでした。",
+      flags: 64,
     },
   });
 });
