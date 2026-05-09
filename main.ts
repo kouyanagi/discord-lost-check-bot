@@ -1,7 +1,7 @@
 import nacl from "tweetnacl";
 
 const DISCORD_PUBLIC_KEY = Deno.env.get("DISCORD_PUBLIC_KEY") ?? "";
-const GAS_URL = Deno.env.get("GAS_URL") ?? "";
+const GAS_URL = Deno.env.get("GAS_WEB_APP_URL") ?? "";
 
 const encoder = new TextEncoder();
 
