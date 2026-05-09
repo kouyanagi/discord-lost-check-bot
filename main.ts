@@ -1,4 +1,4 @@
-import nacl from "npm:tweetnacl";
+import nacl from "tweetnacl";
 
 const DISCORD_PUBLIC_KEY = Deno.env.get("DISCORD_PUBLIC_KEY") ?? "";
 const GAS_URL = Deno.env.get("GAS_URL") ?? "";
@@ -30,6 +30,25 @@ async function verifyDiscordRequest(request: Request) {
   return { ok: isVerified, body };
 }
 
+async function updateOriginalResponse(
+  applicationId: string,
+  token: string,
+  content: string,
+) {
+  await fetch(
+    `https://discord.com/api/v10/webhooks/${applicationId}/${token}/messages/@original`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        content,
+      }),
+    },
+  );
+}
+
 Deno.serve(async (request) => {
   const { ok, body } = await verifyDiscordRequest(request);
 
@@ -39,24 +58,41 @@ Deno.serve(async (request) => {
 
   const interaction = JSON.parse(body);
 
-  // Discordの接続確認
   if (interaction.type === 1) {
     return Response.json({ type: 1 });
   }
 
-  // /落選確認
+  const applicationId = interaction.application_id;
+  const token = interaction.token;
   const channelId = interaction.channel_id;
 
-  const gasResponse = await fetch(
-    `${GAS_URL}?mode=lostCheck&channelId=${channelId}`,
-  );
+  // 先にDiscordへ応答する
+  setTimeout(async () => {
+    try {
+      const gasResponse = await fetch(
+        `${GAS_URL}?mode=lostCheck&channelId=${channelId}`,
+      );
 
-  const data = await gasResponse.json();
+      const data = await gasResponse.json();
 
+      await updateOriginalResponse(
+        applicationId,
+        token,
+        data.message ?? "取得できませんでした。",
+      );
+    } catch (e) {
+      await updateOriginalResponse(
+        applicationId,
+        token,
+        `エラーが発生しました：${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }, 0);
+
+  // 3秒以内に「考え中」で返す
   return Response.json({
-    type: 4,
+    type: 5,
     data: {
-      content: data.message ?? "取得できませんでした。",
       flags: 64,
     },
   });
