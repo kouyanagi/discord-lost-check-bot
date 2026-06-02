@@ -62,32 +62,54 @@ Deno.serve(async (request) => {
     return Response.json({ type: 1 });
   }
 
-  const applicationId = interaction.application_id;
-  const token = interaction.token;
-  const channelId = interaction.channel_id;
+const applicationId = interaction.application_id;
+const token = interaction.token;
+const channelId = interaction.channel_id;
+
+const commandName =
+  interaction.data?.name ?? "";
 
   // 先にDiscordへ応答する
   setTimeout(async () => {
-    try {
-      const gasResponse = await fetch(
-        `${GAS_URL}?mode=lostCheck&channelId=${channelId}`,
-      );
+   try {
 
-      const data = await gasResponse.json();
+     let mode = "lostCheck";
 
-      await updateOriginalResponse(
-        applicationId,
-        token,
-        data.message ?? "取得できませんでした。",
-      );
-    } catch (e) {
-      await updateOriginalResponse(
-        applicationId,
-        token,
-        `エラーが発生しました：${e instanceof Error ? e.message : String(e)}`,
-      );
-    }
-  }, 0);
+     switch (commandName) {
+       case "応募者一覧":
+        mode = "applicantList";
+        break;
+
+       case "落選確認":
+        default:
+        mode = "lostCheck";
+        break;
+      }
+
+     const gasResponse = await fetch(
+       `${GAS_URL}?mode=${mode}&channelId=${channelId}`,
+     );
+
+     const data = await gasResponse.json();
+
+     await updateOriginalResponse(
+      applicationId,
+      token,
+      data.message ?? "取得できませんでした。",
+    );
+
+  } catch (e) {
+
+    await updateOriginalResponse(
+      applicationId,
+      token,
+      `エラーが発生しました：${
+        e instanceof Error ? e.message : String(e)
+      }`,
+    );
+
+  }
+}, 0);
 
   // 3秒以内に「考え中」で返す
   return Response.json({

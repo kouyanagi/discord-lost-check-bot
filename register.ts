@@ -11,6 +11,10 @@ const commands = [
     name: "落選確認",
     description: "このチャンネルに紐づくキャストの落選者情報を確認します",
   },
+  {
+    name: "応募者一覧",
+    description: "このチャンネルに紐づくキャストの応募者一覧を確認します",
+  },
 ];
 
 const url =
